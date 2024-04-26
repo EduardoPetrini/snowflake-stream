@@ -1,21 +1,6 @@
-const snowflake = require('snowflake-sdk');
-const dotenv = require('dotenv');
+const SnowflakeConnector = require('./SnowflakeConnector');
 const { log } = console;
 
-dotenv.config();
-
-const credentials = {
-  account: process.env.SF_ACCOUNT,
-  database: process.env.SF_DATABASE,
-  warehouse: process.env.SF_WAREHOUSE,
-  username: process.env.SF_USERNAME,
-  password: process.env.SF_PASSWORD,
-};
-
-const sqlText = process.env.SQL_TEXT;
-
-let isPaused = false;
-let isDone = false;
 function nextItem(dataStream) {
   log('Reading next...');
   let done = false;
@@ -49,67 +34,10 @@ function nextItem(dataStream) {
   return iterator;
 }
 
-class SnowflakeGenerator {
-  constructor(sqlText, connection) {
-    this.sqlText = sqlText;
-    this.connection = connection;
-  }
-
-  static async getInstance(sqlText, credentials) {
-    log('creating connection');
-    const connection = snowflake.createConnection(credentials);
-    log('connecting');
-    await new Promise((resolve, reject) => connection.connect((err, conn) => (err ? reject(err) : resolve(conn))));
-
-    const instanced = new SnowflakeGenerator(sqlText, connection);
-    log('Getting the stream data');
-    await instanced.getStreamData();
-
-    return instanced;
-  }
-
-  async getStmt() {
-    log('getting statement');
-    if (this.statement) {
-      return this.statement;
-    }
-    const statement = await new Promise((resolve, reject) => {
-      this.connection.execute({
-        sqlText,
-        streamResult: true,
-        complete: (err, stmt) => (err ? reject(err) : resolve(stmt)),
-      });
-    });
-
-    this.statement = statement;
-    return statement;
-  }
-
-  async getStreamData() {
-    log('getting streamData');
-    if (this.dataStream) {
-      return this.dataStream;
-    }
-
-    if (!this.statement) {
-      await this.getStmt();
-    }
-    const dataStream = this.statement.streamRows();
-    this.dataStream = dataStream;
-    return dataStream;
-  }
-
-  async getNextItem() {
-    const result = await nextItem(this.dataStream);
-    const ni = await result.next();
-    return result;
-  }
-}
-
 const start = async () => {
   log('Getting the instance...');
-  const sfGen = await SnowflakeGenerator.getInstance(sqlText, credentials);
-  const dataStream = await sfGen.getStreamData();
+  const sfInstance = await SnowflakeConnector.getInstance();
+  const dataStream = await sfInstance.getStreamData();
   const iterator = nextItem(dataStream);
 
   log('Getting result1...');
@@ -122,11 +50,8 @@ const start = async () => {
   console.log(result1.C_CUSTKEY);
   console.log(result2.C_CUSTKEY);
   console.log(result3.C_CUSTKEY);
-
 };
 
-// start()
-//   .then(() => console.log('Done'))
-//   .catch(console.error);
-
-module.exports = { SnowflakeGenerator };
+start()
+  .then(() => console.log('Done'))
+  .catch(console.error);
