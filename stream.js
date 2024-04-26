@@ -1,37 +1,10 @@
 const stream = require('stream');
-const snowflake = require('snowflake-sdk');
-const dotenv = require('dotenv');
+const SnowflakeConnector = require('./SnowflakeConnector');
 const { log } = console;
 
-dotenv.config();
-
-const credentials = {
-  account: process.env.SF_ACCOUNT,
-  database: process.env.SF_DATABASE,
-  warehouse: process.env.SF_WAREHOUSE,
-  username: process.env.SF_USERNAME,
-  password: process.env.SF_PASSWORD,
-};
-
-const sqlText = process.env.SQL_TEXT;
-
 const start = async () => {
-  log('creating connection');
-  const connection = snowflake.createConnection(credentials);
-  log('connecting');
-  await new Promise((resolve, reject) => connection.connect((err, conn) => (err ? reject(err) : resolve(conn))));
-
-  log('getting statement');
-  const statement = await new Promise((resolve, reject) => {
-    connection.execute({
-      sqlText,
-      streamResult: true,
-      complete: (err, stmt) => (err ? reject(err) : resolve(stmt)),
-    });
-  });
-
-  log('getting stream');
-  const dataStream = statement?.streamRows();
+  const sfInstance = await SnowflakeConnector.getInstance();
+  const dataStream = await sfInstance.getStreamData();
 
   let isPaused = false;
   let running = false;
@@ -64,8 +37,8 @@ const start = async () => {
 
         if (!state) {
           log('pausing');
-            isPaused = true;
-            dataStream.pause();
+          isPaused = true;
+          dataStream.pause();
         }
       });
     },
@@ -83,7 +56,6 @@ const start = async () => {
   const writer = new stream.Writable({
     objectMode: true,
     async write(chunk, encode, callback) {
-      
       setTimeout(() => {
         console.log('w', chunk.C_CUSTKEY);
         // log('write');
