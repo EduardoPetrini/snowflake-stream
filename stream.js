@@ -58,14 +58,11 @@ const start = async () => {
     async write(chunk, encode, callback) {
       setTimeout(() => {
         console.log('w', chunk.C_CUSTKEY);
-        // log('write');
         callback();
       }, 1000);
     },
   });
 
-  // const pipeline = promisify(stream.pipeline);
-  // await pipeline(read, writer);
   return new Promise((resolve, reject) => {
     stream.pipeline(read, transform, writer, err => {
       if (err) return reject(err);
