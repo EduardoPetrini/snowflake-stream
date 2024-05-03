@@ -1,13 +1,23 @@
 const stream = require('stream');
 const SnowflakeConnector = require('./SnowflakeConnector');
+const KafkaProducer = require('./KafkaProducer');
+const MssqlUpserter = require('./MssqlUpserter');
 const { log } = console;
 
+const MAX_RECORDS = 10_000;
 const start = async () => {
+  const resourceMonitor = await import('monitor-resources-js');
+  const monitorMemory = resourceMonitor.monitorMemory;
+  monitorMemory();
   const sfInstance = await SnowflakeConnector.getInstance();
   const dataStream = await sfInstance.getStreamData();
 
+  const producer = await KafkaProducer.init({ topic: 'd.e.f' });
+  const mssql = await MssqlUpserter.init({ table: '[dbo].[customer1]' });
+
   let isPaused = false;
   let running = false;
+  let count = 0;
   const read = new stream.Readable({
     objectMode: true,
     read(size) {
@@ -34,6 +44,9 @@ const start = async () => {
       dataStream?.on('data', row => {
         log('r', row.C_CUSTKEY);
         const state = this.push(row);
+        if (++count === MAX_RECORDS) {
+          this.push(null);
+        }
 
         if (!state) {
           log('pausing');
@@ -46,20 +59,26 @@ const start = async () => {
 
   const transform = new stream.Transform({
     objectMode: true,
-    transform(chunk, encode, callback) {
-      console.log(chunk.C_CUSTKEY, 't');
-
-      callback(null, chunk);
+    async transform(chunk, encode, callback) {
+      const resp = await mssql.merge(chunk);
+      log('t', resp.rowsAffected);
+      // await new Promise(resolve => setTimeout(resolve, 22));
+      return callback(null, chunk);
     },
   });
 
   const writer = new stream.Writable({
     objectMode: true,
     async write(chunk, encode, callback) {
-      setTimeout(() => {
-        console.log('w', chunk.C_CUSTKEY);
-        callback();
-      }, 1000);
+      log('w', chunk.C_CUSTKEY);
+      const message = {
+        key: `${new Date().toISOString()}_${chunk.C_CUSTKEY}`,
+        value: JSON.stringify(chunk),
+      };
+
+      const resp = await producer.push(message);
+      // await new Promise(resolve => setTimeout(resolve, 200));
+      callback();
     },
   });
 
